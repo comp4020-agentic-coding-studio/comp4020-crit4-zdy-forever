@@ -14,3 +14,9 @@ main {
 a {
   color: #0b5fff;
 }
+
+#scene {
+  display: block;
+  width: 100%;
+  height: 20rem;
+}
