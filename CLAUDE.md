@@ -18,6 +18,17 @@ which deliverable applies. Read both before you plan or build.
 - When a check fails, read its output before you change anything.
 - Never commit a red state.
 
+## Background processes (pnpm/node)
+
+- At the start of every conversation, check for stray background processes
+  left running from earlier sessions before starting new ones:
+  `ps -eo pid,etime,command | grep -E 'pnpm|vite|node' | grep -v grep`.
+- Only one `pnpm dev` should be running for this repo at a time. Check the
+  dev port isn't already bound (`lsof -i :5173`) before starting another.
+- Kill any `pnpm`/`vite`/`node` background process for this repo that's been
+  idle for more than 15 minutes (no recent log output, no one actively using
+  it) instead of leaving it running indefinitely.
+
 ## The checks
 
 `typecheck`, `build`, `deploy`, `spec`, `lint`, `tests`, `evidence`, `links`,
