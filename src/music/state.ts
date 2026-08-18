@@ -99,6 +99,12 @@ export class MusicEngine {
     );
     this.active.set(source, { register, sector, handles });
     this.emit("attack", { source, register, sector, mode, velocity });
+    // A monophonic instrument's noteOn above already retired every other
+    // voice at the audio layer (last-note priority). Surface that to the UI
+    // too, so a source that's still physically held — another key, the
+    // other hand — stops showing its sector as sounding once its note has
+    // been silently stolen underneath it.
+    if (!this.instrument.polyphonic) this.releaseOthers(source);
   }
 
   release(source: SourceId): void {
@@ -112,6 +118,16 @@ export class MusicEngine {
     if (!voice) return;
     for (const handle of voice.handles) this.instrument.noteOff(handle);
     this.active.delete(source);
+  }
+
+  /** Drops bookkeeping and fires `release` for every source but `keep`, without
+   * calling into the instrument — its single voice was already stolen. */
+  private releaseOthers(keep: SourceId): void {
+    for (const [source, voice] of this.active) {
+      if (source === keep) continue;
+      this.active.delete(source);
+      this.emit("release", { source, register: voice.register, sector: voice.sector });
+    }
   }
 
   releaseAll(): void {

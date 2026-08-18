@@ -82,6 +82,21 @@ describe("MusicEngine routing", () => {
     expect(violin.onCalls).toHaveLength(1);
   });
 
+  it("releases the previous source's voice when Violin steals it (UI must not show a stolen note as still sounding)", () => {
+    const { engine, violin } = makeEngine();
+    engine.setInstrument("violin");
+    const released: string[] = [];
+    engine.on("release", ({ source }) => released.push(source));
+
+    engine.attack("key:a", "low", 0); // E3, say
+    engine.attack("key:s", "low", 1); // steals the single violin voice
+
+    expect(violin.onCalls).toHaveLength(2);
+    expect(released).toEqual(["key:a"]); // the stolen source is released, not just the new one
+    expect(engine.isSourceActive("key:a")).toBe(false);
+    expect(engine.isSourceActive("key:s")).toBe(true);
+  });
+
   it("releases every held voice and clears state when switching instruments", () => {
     const { engine, piano } = makeEngine();
     engine.attack("key:a", "low", 0);
