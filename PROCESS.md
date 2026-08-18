@@ -69,19 +69,25 @@ quick, stationary OPEN-FIST-OPEN toggles NOTE/CHORD instead.
    independent gating conditions, which is what told me the disambiguation
    logic was actually doing its job and not just passing the happy path.
 
-4. **No headless browser in this environment, so I built a stand-in for
-   "open it and look."** CLAUDE.md says to open the page and look at it, and
-   there's no Playwright/Chromium available here to do that mechanically. I
-   didn't treat a green `pnpm check` as equivalent to that instruction: I wrote
-   a throwaway Node script that loads the actual built bundle
-   ([`272d0b2`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/272d0b2))
-   into JSDOM with `runScripts: "dangerously"` against a stubbed
-   `AudioContext`, and exercised it end to end --- wheel/sector count, a
-   simulated keydown/keyup activating and releasing a sector, and the Violin
-   button correctly locking both wheels to NOTE mode. That caught real DOM
-   wiring, but it is not a substitute for seeing the glass-blur, gradients, and
-   layout render for real, which I'm flagging here rather than letting a green
-   check imply otherwise.
+4. **Actually opening the page in a real browser caught a bug that reading
+   the code and a green `pnpm check` both missed.** CLAUDE.md says the
+   rendered page is the truth, not my mental model of it, so once a real
+   Chrome instance was available I drove the built site directly: switched to
+   Violin, held two keys on the same register at once, and watched --- both
+   sectors stayed lit, even though `violin.ts`'s voice-stealing correctly
+   silences the older oscillator. The audio was right; the wheel was lying
+   about which note was actually sounding. The cause was that
+   `MusicEngine.attack()` tracked "active" per input source, not per instrument
+   voice, so a source that was still physically held kept showing its sector
+   as sounding after a monophonic instrument had silently stolen its note out
+   from under it. I fixed it by having `attack()` release every other source
+   once a monophonic instrument's note lands, added a unit test for it, then
+   reopened the same two-keys-held sequence in the browser to confirm only
+   the newer sector stayed lit
+   ([`06da29f`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/06da29f)).
+   The lesson: a passing test suite proves the parts I thought to test are
+   correct, not that the whole system is; only actually looking at the running
+   page surfaced this one.
 
 ## Before you ship
 
