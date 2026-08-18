@@ -1,9 +1,5 @@
 # Process overview
 
-<!-- TEMPLATE: this file is a shape to fill in, not a form. Replace everything
-     in it with your own overview, and delete this comment — `pnpm
-     check:evidence` will remind you if it's still here. -->
-
 A reading-guide to how the work came together --- a map to your process, not an
 essay about it. Markers read this file and follow its citations; they don't
 trawl the repo for evidence you didn't point at, so if a moment mattered, cite
@@ -17,60 +13,75 @@ cover every deliverable.
 
 ## What I built
 
-One paragraph: the thing, and the idea behind it.
+Two Hands: a browser instrument with no backend and no prerecorded audio.
+Two independently controllable registers (LOW C3--C4, HIGH C4--C5), each an
+eight-sector "liquid-glass" wheel that plays a note per sector in NOTE mode or
+a triad in CHORD mode, live through the Web Audio API. Piano is polyphonic;
+Violin is strictly monophonic with last-note-priority voice stealing. Keyboard,
+mouse, and touch (via Pointer Events) all drive the same central
+`MusicEngine`, and an optional camera mode layers two-hand tracking
+(MediaPipe Tasks Vision) on top as progressive enhancement: an open palm
+summons a floating echo of a register's wheel, a fist locks it and reaching
+in a direction plays that sector with distance-driven expressive gain, and a
+quick, stationary OPEN-FIST-OPEN toggles NOTE/CHORD instead.
 
 ## The moments that mattered
 
-Three or four for an assignment; fewer is fine for a weekly prototype. Keep the
-list short so each moment has room to do all four jobs:
+1. **The spec's own audio/video ban shaped the camera architecture, not just
+   its DOM.** `spec/instrument.test.ts` fails the whole build if any built
+   HTML contains an `<audio>`/`<video>` tag, since a real tag is how a static
+   site would fake "live" sound with a recording. The camera feature needs a
+   `<video>` element to feed MediaPipe, so I couldn't just drop one in
+   `index.html`. Instead `hand-tracker.ts` creates the element at runtime, only
+   once the player explicitly clicks "Enable Camera", and `camera-controller.ts`
+   mounts it into `#camera-layer` itself
+   ([`abd7d40`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/abd7d40)).
+   I knew it held because I re-ran `pnpm build` and grepped `dist/**/*.html` for
+   `<video`/`<audio>` by hand before trusting the automated check again --- the
+   static markup genuinely never gains one, camera on or off.
 
-1. **what happened** --- the problem, or the thing that went wrong
-2. **what you did instead of the obvious thing** --- the call you made, and why
-   it beat the obvious one
-3. **how you knew it was right** --- the check you ran, the viewport you looked
-   at, what you read before accepting the diff
-4. **the citation** --- a commit or commit range, a `CLAUDE.md` change, a check
-   that went from red to green, a prompt paired with the commit it produced
+2. **stylelint's kebab-case rule caught a BEM habit I didn't notice I still
+   had.** I wrote the whole liquid-glass stylesheet using BEM's `block--modifier`
+   convention (`wheel--chord`, `sector--active`, ...), which is idiomatic CSS
+   but fails this repo's `stylelint-config-standard` `selector-class-pattern`
+   rule --- it wants single-dash kebab-case only. `stylelint --fix` fixed 131 of
+   143 errors on its own but left every BEM double-dash alone, since renaming a
+   class isn't a safe autofix. Rather than loosen the rule, I renamed every
+   modifier class to single-dash form across both `styles.css` and
+   `wheel.ts`
+   ([`272d0b2`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/272d0b2)).
+   I checked it was really fixed, not just quieter, by re-running
+   `stylelint styles.css` to zero errors and then grepping both files for the
+   old `--` names to confirm nothing still referenced them.
 
-Jobs 2 and 3 are the ones the repo can't tell a reader on its own, so they're
-where the marks are. The strongest moments are the ones where a correction
-landed in the **harness** --- the standards and checks your work has to satisfy
---- rather than in a retry: a rule added to `CLAUDE.md`, a check wired up, an
-attempt thrown away. Retrying until it passes is the routine case, and changing
-what the work runs against is the skilled one.
+3. **The camera's gesture logic is designed to need no camera to test.** The
+   spec calls out that gesture-sequence classification should be pure and
+   testable without fake hardware. `gesture-state-machine.ts` takes it
+   literally: `stepHandGesture(state, sample)` is a plain reducer over
+   `{shape, x, y, t}` samples with no DOM or MediaPipe dependency, so the
+   trickiest behavioural rule --- a quick, stationary OPEN-FIST-OPEN is a mode
+   toggle, but the same sequence with enough displacement or duration is a
+   played note followed by a release --- is asserted directly in
+   `gesture-state-machine.test.ts` with synthetic sample sequences, no camera or
+   even a browser involved
+   ([`ca87dc4`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/ca87dc4)).
+   Both the duration threshold and the displacement threshold are exercised as
+   independent gating conditions, which is what told me the disambiguation
+   logic was actually doing its job and not just passing the happy path.
 
-Cite each moment as a link whose text is the commit hash or range and whose
-target is this repo's commit or compare URL, so a reader clicks straight to the
-evidence:
-
-- one commit: [`a1b2c3d`](https://github.com/YOUR-ORG/YOUR-REPO/commit/a1b2c3d)
-- a range:
-  [`a1b2c3d...e4f5a6b`](https://github.com/YOUR-ORG/YOUR-REPO/compare/a1b2c3d...e4f5a6b)
-
-To pair a prompt with the commit it produced, quote the prompt (curated, not a
-full transcript) next to the citation:
-
-> the prompt, verbatim
-
-Screenshots are welcome where one carries the verification better than a
-sentence does. Commit the file to this repo and link it with a **relative**
-path, which is what makes it render on GitHub: `![alt text](docs/before.png)`.
-Images don't count towards the word count and don't replace the citation.
-
-### A worked moment, for shape
-
-Delete this section along with the rest of the boilerplate --- it's here to show
-the four jobs in one paragraph, not to be imitated in content.
-
-> The date formatter kept coming back with `toLocaleDateString()` and no locale
-> argument, so the same build rendered differently on my machine and in CI. I'd
-> already re-prompted it twice, which fixed the line but not the habit, so the
-> third time I put the rule in `CLAUDE.md` instead
-> ([`3f9ac21`](https://github.com/YOUR-ORG/YOUR-REPO/commit/3f9ac21)) and added
-> a spec test that fails on a bare `toLocaleDateString`. That's what told me it
-> had actually taken: the test went red against the old code and green against
-> the new, and the next two features it wrote passed it without prompting
-> ([`3f9ac21...b7e0d14`](https://github.com/YOUR-ORG/YOUR-REPO/compare/3f9ac21...b7e0d14)).
+4. **No headless browser in this environment, so I built a stand-in for
+   "open it and look."** CLAUDE.md says to open the page and look at it, and
+   there's no Playwright/Chromium available here to do that mechanically. I
+   didn't treat a green `pnpm check` as equivalent to that instruction: I wrote
+   a throwaway Node script that loads the actual built bundle
+   ([`272d0b2`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/272d0b2))
+   into JSDOM with `runScripts: "dangerously"` against a stubbed
+   `AudioContext`, and exercised it end to end --- wheel/sector count, a
+   simulated keydown/keyup activating and releasing a sector, and the Violin
+   button correctly locking both wheels to NOTE mode. That caught real DOM
+   wiring, but it is not a substitute for seeing the glass-blur, gradients, and
+   layout render for real, which I'm flagging here rather than letting a green
+   check imply otherwise.
 
 ## Before you ship
 
