@@ -6,6 +6,7 @@ import { getAudioEngine } from "../audio/engine";
 import type { Instrument } from "../audio/instrument";
 import { Piano } from "../audio/piano";
 import { Violin } from "../audio/violin";
+import { CameraController } from "../camera/camera-controller";
 import { createKeyboardController } from "../input/keyboard";
 import { type InstrumentId, MusicEngine } from "../music/state";
 import { Wheel } from "./wheel";
@@ -67,4 +68,40 @@ export function startApp(): void {
   // specific handler (e.g. a future control) before any note has sounded.
   window.addEventListener("pointerdown", onGesture, { once: true });
   window.addEventListener("keydown", onGesture, { once: true });
+
+  setUpCamera(engine, onGesture);
+}
+
+/**
+ * Camera is progressive enhancement: two non-interactive "echo" wheels that
+ * float over the video and mirror whichever sector a tracked hand is
+ * reaching for. Wired up separately from the always-on keyboard/pointer path
+ * above, and never required for it.
+ */
+function setUpCamera(engine: MusicEngine, onGesture: () => void): void {
+  const layer = document.querySelector<HTMLDivElement>("#camera-layer");
+  const statusEl = document.querySelector<HTMLParagraphElement>("#camera-status");
+  const toggle = document.querySelector<HTMLButtonElement>("#camera-toggle");
+  if (!layer || !statusEl || !toggle) return;
+
+  const echoLow = new Wheel({ register: "low", caption: "LOW · C3–C4", engine, interactive: false });
+  const echoHigh = new Wheel({ register: "high", caption: "HIGH · C4–C5", engine, interactive: false });
+  layer.append(echoLow.element, echoHigh.element);
+
+  const camera = new CameraController(engine, { low: echoLow, high: echoHigh }, layer, statusEl, onGesture);
+
+  toggle.addEventListener("click", async () => {
+    onGesture();
+    toggle.disabled = true;
+    if (camera.isActive) {
+      camera.disable();
+      toggle.textContent = "Enable Camera";
+      toggle.setAttribute("aria-pressed", "false");
+    } else {
+      const started = await camera.enable();
+      toggle.textContent = started ? "Disable Camera" : "Enable Camera";
+      toggle.setAttribute("aria-pressed", String(started));
+    }
+    toggle.disabled = false;
+  });
 }

@@ -168,8 +168,9 @@ export class Wheel {
     if (this.centerButton) this.centerButton.disabled = disabled;
   }
 
+  /** `x`/`y` are pixels relative to the positioned ancestor, naming the wheel's desired centre. */
   setPosition(x: number, y: number): void {
-    this.element.style.transform = `translate(${x}px, ${y}px)`;
+    this.element.style.transform = `translate(calc(${x}px - 50%), calc(${y}px - 50%))`;
   }
 
   setVisible(visible: boolean): void {
