@@ -27,3 +27,7 @@ export function sectorFromDisplacement(dx: number, dy: number): number {
 export function radialDistance(dx: number, dy: number): number {
   return Math.hypot(dx, dy);
 }
+
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
