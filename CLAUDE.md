@@ -29,10 +29,19 @@ which deliverable applies. Read both before you plan or build.
   idle for more than 15 minutes (no recent log output, no one actively using
   it) instead of leaving it running indefinitely.
 
+## The link-preview card
+
+`public/card.png` (1200x630) is the image a shared link shows; `index.html`'s
+head points at it, alongside a `description` meta `spec/invariants.test.ts`
+also checks for. The card URL resolves against the page that names it, like
+any link --- `./card.png` is wrong one directory down.
+
 ## The checks
 
 `typecheck`, `build`, `deploy`, `spec`, `lint`, `tests`, `evidence`, `links`,
-`secrets`. Run `pnpm check`. Read the failure.
+`secrets`. `pnpm check` runs the local ones (`pnpm check:evidence` is the
+extra gate before you ship); CI runs the same plus `links`, `secrets` and the
+`deploy`. Read the failure.
 
 `spec/README.md`, `PROCESS.md` and `reflections/README.md` are in this repo and
 say what they are for.

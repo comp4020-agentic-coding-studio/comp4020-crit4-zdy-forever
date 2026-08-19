@@ -37,6 +37,29 @@ describe("invariants: every page", () => {
         expect(doc.title.trim()).not.toBe("");
       });
 
+      it("has a meta description", () => {
+        const description = doc
+          .querySelector('meta[name="description"]')
+          ?.getAttribute("content")
+          ?.trim();
+        expect(
+          description,
+          "a search result and a link preview both read this page's description",
+        ).toBeTruthy();
+      });
+
+      it("has an og:image card", () => {
+        // presence only: whether the path resolves shows up in the gallery
+        const card = doc
+          .querySelector('meta[property="og:image"]')
+          ?.getAttribute("content")
+          ?.trim();
+        expect(
+          card,
+          "with no card image, a shared link renders as a bare row of text",
+        ).toBeTruthy();
+      });
+
       it("has a mobile viewport", () => {
         expect(doc.querySelector('meta[name="viewport"]')).toBeTruthy();
       });
