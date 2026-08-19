@@ -4,16 +4,25 @@
 // would otherwise be invisible until someone noticed the instrument sounded
 // different again.
 //
-// Run:  node tools/violin-lab/verify-worklet.mjs
+// Run:  node tools/violin-lab/verify-worklet.mjs [candidate-slug]
+//
+// Defaults to whichever slug build-worklet.mjs last shipped from
+// (DEFAULT_CANDIDATE below) -- keep the two in sync, or pass the same slug
+// to both explicitly.
 
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyse, NOTE, renderNote } from "./harness.mjs";
-import { makeVoice as candidateVoice } from "./candidates/8-spectral-bite.mjs";
+
+const DEFAULT_CANDIDATE = "7-spectral-quietest";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const slug = process.argv[2] ?? DEFAULT_CANDIDATE;
+const { makeVoice: candidateVoice } = await import(pathToFileURL(join(HERE, "candidates", `${slug}.mjs`)).href);
 const SHIPPED = join(HERE, "..", "..", "public", "violin-worklet.js");
 const { makeViolinVoice } = await import(pathToFileURL(SHIPPED).href);
+
+console.log(`comparing against candidate: ${slug}`);
 
 const SR = 48000;
 const HOLD = 2.5;

@@ -8,16 +8,23 @@
 //   2. the candidate itself, minus its one import line
 //   3. the AudioWorkletProcessor glue (message handling, voice stealing)
 //
-// Regenerate with:  node tools/violin-lab/build-worklet.mjs
-// Verify with:      node tools/violin-lab/verify-worklet.mjs
+// Regenerate with:  node tools/violin-lab/build-worklet.mjs [candidate-slug]
+// Verify with:      node tools/violin-lab/verify-worklet.mjs [candidate-slug]
+//
+// The candidate defaults to whichever slug is shipping (DEFAULT_CANDIDATE
+// below); pass a different one to switch which timbre ships. Keep the two
+// scripts' defaults in sync, or pass the same slug to both explicitly.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const DEFAULT_CANDIDATE = "7-spectral-quietest";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
-const CANDIDATE = join(HERE, "candidates", "8-spectral-bite.mjs");
+const slug = process.argv[2] ?? DEFAULT_CANDIDATE;
+const CANDIDATE = join(HERE, "candidates", `${slug}.mjs`);
 const DSP = join(HERE, "dsp.mjs");
 const TARGET = join(ROOT, "public", "violin-worklet.js");
 
@@ -180,11 +187,12 @@ if (typeof AudioWorkletProcessor !== "undefined") {
 const header = `// GENERATED FILE -- do not edit by hand.
 //
 // Assembled by tools/violin-lab/build-worklet.mjs from
-// tools/violin-lab/candidates/8-spectral-bite.mjs, which is the candidate the
-// listener picked after auditioning eight rendered WAVs. The DSP below is
+// tools/violin-lab/candidates/${slug}.mjs, which is the candidate the
+// listener picked after auditioning several rendered WAVs. The DSP below is
 // byte-for-byte the code that produced the audio they approved; only the
 // import line was removed and the entry point renamed. Regenerate rather than
-// editing, and re-run tools/violin-lab/verify-worklet.mjs afterwards.
+// editing (\`node tools/violin-lab/build-worklet.mjs ${slug}\`), and re-run
+// tools/violin-lab/verify-worklet.mjs afterwards.
 //
 // Lives in public/ so Vite copies it verbatim: an AudioWorklet module is
 // loaded by URL at runtime, not bundled, and public/ is the one place whose
@@ -194,7 +202,7 @@ const header = `// GENERATED FILE -- do not edit by hand.
 
 writeFileSync(
   TARGET,
-  `${header}/* --- primitives, verbatim from tools/violin-lab/dsp.mjs --- */\n\n${primitives}\n\n/* --- candidate 8-spectral-bite, verbatim --- */\n\n${renamed}\n${glue}`,
+  `${header}/* --- primitives, verbatim from tools/violin-lab/dsp.mjs --- */\n\n${primitives}\n\n/* --- candidate ${slug}, verbatim --- */\n\n${renamed}\n${glue}`,
 );
 
-console.log(`wrote ${TARGET}`);
+console.log(`wrote ${TARGET} from candidate ${slug}`);

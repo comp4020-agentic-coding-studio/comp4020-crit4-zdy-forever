@@ -1,11 +1,12 @@
 // GENERATED FILE -- do not edit by hand.
 //
 // Assembled by tools/violin-lab/build-worklet.mjs from
-// tools/violin-lab/candidates/8-spectral-bite.mjs, which is the candidate the
-// listener picked after auditioning eight rendered WAVs. The DSP below is
+// tools/violin-lab/candidates/7-spectral-quietest.mjs, which is the candidate the
+// listener picked after auditioning several rendered WAVs. The DSP below is
 // byte-for-byte the code that produced the audio they approved; only the
 // import line was removed and the entry point renamed. Regenerate rather than
-// editing, and re-run tools/violin-lab/verify-worklet.mjs afterwards.
+// editing (`node tools/violin-lab/build-worklet.mjs 7-spectral-quietest`), and re-run
+// tools/violin-lab/verify-worklet.mjs afterwards.
 //
 // Lives in public/ so Vite copies it verbatim: an AudioWorklet module is
 // loaded by URL at runtime, not bundled, and public/ is the one place whose
@@ -112,7 +113,7 @@ class PinkNoise {
   }
 }
 
-/* --- candidate 8-spectral-bite, verbatim --- */
+/* --- candidate 7-spectral-quietest, verbatim --- */
 
 // 5-spectral-residual — SPECTRAL MODELLING SYNTHESIS (Serra & Smith 1990).
 //
@@ -150,7 +151,7 @@ class PinkNoise {
 // gesture detail, which must differ note to note).
 
 
-export const name = "8-spectral-bite";
+export const name = "7-spectral-quietest";
 
 export const notes = `
 Spectral modelling synthesis (Serra & Smith): a deterministic bank of up to 40
@@ -333,11 +334,11 @@ const GATE_FLOOR = 0.42;
 const GATE_DEPTH = 1.7;
 // Variant of 5-spectral-residual. The listener judged 5 the closest of the
 // five to a real bowed string, but said its noise floor was too obvious.
-// residual sustain floor 0.23 -> 0.10, top rolloff from 4 kHz, onset burst raised.
+// residual sustain floor 0.23 -> 0.05, top rolloff from 3.2 kHz, onset burst raised further.
 // The residual is what makes this read as bowed rather than synthetic, so it
 // is not removed -- it is made transient instead of steady: much lower during
 // the sustain, still loud through the bow bite at the start of the stroke.
-const RES_TO_DET_RMS = 0.08; // residual : deterministic RMS in the sustain
+const RES_TO_DET_RMS = 0.05; // residual : deterministic RMS in the sustain
 const CAL = 2048;
 const CAL_SKIP = 512;
 /** Cache of residual-path calibrations, keyed by sampleRate:f0. A repeated pitch
@@ -440,9 +441,9 @@ export function makeViolinVoice({ sampleRate, frequency, velocity, rng }) {
     // way friction noise does against a 1/n source.
     let g = Math.exp(bodyDb(fc) * LN10_20);
     // Bow noise heard as a separate layer of hiss is almost all top end, so
-    // the residual rolls off from 4000 Hz (squared, i.e. -12 dB/oct) rather
+    // the residual rolls off from 3200 Hz (squared, i.e. -12 dB/oct) rather
     // than gently from 9 kHz.
-    if (fc > 4000) { const r = 4000 / fc; g *= r * r; }
+    if (fc > 3200) { const r = 3200 / fc; g *= r * r; }
     bandBase[b] = g;
   }
   const pink = new PinkNoise(rng);
@@ -642,13 +643,7 @@ export function makeViolinVoice({ sampleRate, frequency, velocity, rng }) {
     // not just the pre-Helmholtz 50 ms: while the bow is still settling, more of
     // each period is spent slipping. bf^0.9 (rather than ^1.5) keeps the noise
     // from being penalised twice over by a bow force that is still ramping.
-    // Quiet sustain, loud bow bite. Simply scaling the whole residual down
-    // removed the steady hiss but took the attack's bite with it (onset noise
-    // fell from 0.031 to 0.009), and the bite is a large part of what made this
-    // read as bowed at all. So the onset burst is scaled back UP by much more
-    // than the sustain floor came down: the noise becomes transient rather than
-    // merely quieter.
-    const boost = 1 + 16 * Math.exp(-t / 0.13) + 8 * stage1;
+    const boost = 1 + 4.5 * Math.exp(-t / 0.14) + 3.4 * stage1;
     resLevel = master * Math.exp(Math.log(bf) * 0.9) * boost * (releasing ? Math.exp(-relT / 0.045) : 1);
     betaCur = 0.10 + 0.07 * (1.25 - bf);
     if (betaCur < 0.05) betaCur = 0.05;
