@@ -142,16 +142,40 @@ describe("stepHandGesture: hand loss", () => {
     expect(state.phase).toBe("following");
   });
 
-  it("hides the wheel and silences after enough consecutive lost frames", () => {
+  it("hides the wheel and silences once the hand has been missing past the grace period", () => {
     const samples: { shape: "open" | "fist" | "unknown"; x: number; y: number; t: number }[] = [
       { shape: "fist", x: 0.5, y: 0.3, t: 0 },
     ];
-    for (let i = 1; i <= DEFAULT_HAND_GESTURE_CONFIG.missedFrameLimit; i += 1) {
-      samples.push({ shape: "unknown" as const, x: 0.5, y: 0.3, t: i * 16 });
+    // A handful of misses spread over exactly the grace window must NOT hide
+    // the wheel yet — only the tick that actually crosses the threshold does.
+    const step = 16;
+    for (let t = step; t < DEFAULT_HAND_GESTURE_CONFIG.missingGraceMs; t += step) {
+      samples.push({ shape: "unknown" as const, x: 0.5, y: 0.3, t });
     }
+    const { eventsPerStep: beforeTimeout } = run(samples);
+    expect(beforeTimeout.flat()).not.toContainEqual({ type: "wheel-hide" });
+
+    samples.push({ shape: "unknown", x: 0.5, y: 0.3, t: DEFAULT_HAND_GESTURE_CONFIG.missingGraceMs + step });
     const { eventsPerStep, state } = run(samples);
     const lastEvents = eventsPerStep.at(-1) ?? [];
     expect(lastEvents).toContainEqual({ type: "wheel-hide" });
     expect(state.phase).toBe("idle");
+  });
+
+  it("tolerates the same total number of missed samples when they arrive slowly (irregular real-camera timing)", () => {
+    // Real detectForVideo calls don't land on a fixed cadence — a machine
+    // under load might only manage a handful of frames per second. The
+    // timeout has to be about elapsed time, not sample count, or a slow
+    // machine would hide the wheel far sooner (in wall-clock terms) than a
+    // fast one.
+    const samples: { shape: "open" | "fist" | "unknown"; x: number; y: number; t: number }[] = [
+      { shape: "fist", x: 0.5, y: 0.3, t: 0 },
+      { shape: "unknown", x: 0.5, y: 0.3, t: 100 },
+      { shape: "unknown", x: 0.5, y: 0.3, t: 200 },
+      { shape: "unknown", x: 0.5, y: 0.3, t: 300 }, // still under the 400ms grace period
+    ];
+    const { eventsPerStep, state } = run(samples);
+    expect(eventsPerStep.flat()).not.toContainEqual({ type: "wheel-hide" });
+    expect(state.phase).toBe("locked");
   });
 });

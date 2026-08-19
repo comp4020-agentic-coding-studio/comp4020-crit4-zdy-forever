@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyHandShape, palmCenter, physicalHandedness } from "./gesture-classifier";
+import { classifyHandShape, palmCenter, physicalHandedness, registerForHand } from "./gesture-classifier";
 
 // Builds a synthetic 21-point hand at the origin, wrist at (0,0), with each
 // of the four fingers (index/middle/ring/pinky) independently either
@@ -57,10 +57,22 @@ describe("palmCenter", () => {
 });
 
 describe("physicalHandedness", () => {
-  it("swaps MediaPipe's mirrored-input label to the physical hand", () => {
-    // getUserMedia frames are unmirrored, but MediaPipe assumes a mirrored
-    // (selfie) input, so its "Left"/"Right" label is backwards for us.
-    expect(physicalHandedness("Left")).toBe("right");
-    expect(physicalHandedness("Right")).toBe("left");
+  it("trusts MediaPipe's label as the physical hand", () => {
+    // Verified against a real camera: the mirrored-input swap theory read
+    // backwards in practice, so the raw label is used directly.
+    expect(physicalHandedness("Left")).toBe("left");
+    expect(physicalHandedness("Right")).toBe("right");
+  });
+});
+
+describe("registerForHand", () => {
+  it("splits low/high between hands when both are visible", () => {
+    expect(registerForHand("left", true)).toBe("low");
+    expect(registerForHand("right", true)).toBe("high");
+  });
+
+  it("defaults a lone hand to the high register, whichever hand it is", () => {
+    expect(registerForHand("left", false)).toBe("high");
+    expect(registerForHand("right", false)).toBe("high");
   });
 });

@@ -6,7 +6,13 @@
 import type { MusicEngine } from "../music/state";
 import type { Register } from "../music/tables";
 import type { Wheel } from "../ui/wheel";
-import { classifyHandShape, palmCenter, type PhysicalHand, physicalHandedness } from "./gesture-classifier";
+import {
+  classifyHandShape,
+  palmCenter,
+  type PhysicalHand,
+  physicalHandedness,
+  registerForHand,
+} from "./gesture-classifier";
 import {
   type HandGestureState,
   INITIAL_HAND_GESTURE_STATE,
@@ -15,8 +21,7 @@ import {
 import { HandTracker, type TrackedHand } from "./hand-tracker";
 
 const MIN_HAND_CONFIDENCE = 0.5;
-
-const REGISTER_FOR_HAND: Record<PhysicalHand, Register> = { left: "low", right: "high" };
+const DEFAULT_REGISTER_FOR_HAND: Record<PhysicalHand, Register> = { left: "low", right: "high" };
 
 export class CameraController {
   private tracker: HandTracker | null = null;
@@ -26,6 +31,8 @@ export class CameraController {
     left: INITIAL_HAND_GESTURE_STATE,
     right: INITIAL_HAND_GESTURE_STATE,
   };
+  private handRegister: Record<PhysicalHand, Register> = { ...DEFAULT_REGISTER_FOR_HAND };
+  private anyLocked = false;
 
   constructor(
     private readonly engine: MusicEngine,
@@ -33,6 +40,7 @@ export class CameraController {
     private readonly layer: HTMLElement,
     private readonly statusEl: HTMLElement,
     private readonly onGesture: () => void,
+    private readonly onLockChange: (anyLocked: boolean) => void,
   ) {}
 
   get isActive(): boolean {
@@ -84,15 +92,19 @@ export class CameraController {
 
   private resetHand(hand: PhysicalHand): void {
     this.engine.release(`camera:${hand}`);
-    const wheel = this.wheels[REGISTER_FOR_HAND[hand]];
+    const wheel = this.wheels[this.handRegister[hand]];
     wheel.setVisible(false);
     wheel.setActiveSector(null);
+    wheel.setLocked(false);
     this.handStates[hand] = INITIAL_HAND_GESTURE_STATE;
+    this.handRegister[hand] = DEFAULT_REGISTER_FOR_HAND[hand];
+    this.updateLockState();
   }
 
   private onFrame(hands: TrackedHand[]): void {
     const seen = new Set<PhysicalHand>();
     const now = performance.now();
+    const samples: { physical: PhysicalHand; shape: "open" | "fist" | "unknown"; x: number; y: number }[] = [];
     for (const hand of hands) {
       if (hand.confidence < MIN_HAND_CONFIDENCE || hand.landmarks.length < 21) continue;
       const physical = physicalHandedness(hand.handedness);
@@ -103,30 +115,79 @@ export class CameraController {
       // MediaPipe reports normalized coordinates in the raw (unmirrored)
       // camera frame; the feed is mirrored on screen with CSS, so flip x to
       // keep the wheel under the hand the player sees, not the sensor sees.
-      this.applySample(physical, { shape, x: 1 - center.x, y: center.y, t: now });
+      samples.push({ physical, shape, x: 1 - center.x, y: center.y });
     }
     for (const hand of ["left", "right"] as const) {
-      if (!seen.has(hand)) this.applySample(hand, { shape: "unknown", x: 0, y: 0, t: now });
+      if (!seen.has(hand)) samples.push({ physical: hand, shape: "unknown", x: 0, y: 0 });
     }
+
+    const bothHandsVisible = seen.size === 2;
+    for (const sample of samples) {
+      // Only reconcile a hand's register when it was actually detected this
+      // frame. MediaPipe drops a hand for a frame or two constantly (motion
+      // blur, brief occlusion by the other hand) — if a *missing* hand were
+      // reconciled too, it would momentarily look "alone" and get reassigned
+      // to its solo default register, which collides with whatever the
+      // other, still-visible hand already owns there. That collision made
+      // both hands fight over one Wheel object: engine.attack still worked
+      // for each hand independently, but only the last one applied each
+      // frame won the shared wheel's visible/locked DOM state — exactly the
+      // "one hand's wheel never shows, though it plays" symptom. A hand that
+      // truly leaves is already handled by its own missed-frame countdown in
+      // the gesture state machine, on its existing register.
+      if (seen.has(sample.physical)) this.reconcileRegister(sample.physical, bothHandsVisible);
+      this.applySample(sample.physical, { ...sample, t: now });
+    }
+    this.updateLockState();
+  }
+
+  /** Switches a hand's controlled register when hand-count changes what it should be,
+   *  releasing/hiding whatever it held on the old register so nothing gets stuck. */
+  private reconcileRegister(hand: PhysicalHand, bothHandsVisible: boolean): void {
+    const next = registerForHand(hand, bothHandsVisible);
+    const current = this.handRegister[hand];
+    if (next === current) return;
+
+    this.engine.release(`camera:${hand}`);
+    const oldWheel = this.wheels[current];
+    oldWheel.setVisible(false);
+    oldWheel.setActiveSector(null);
+    oldWheel.setLocked(false);
+    this.handStates[hand] = INITIAL_HAND_GESTURE_STATE;
+    this.handRegister[hand] = next;
+  }
+
+  private updateLockState(): void {
+    const anyLocked = this.handStates.left.phase === "locked" || this.handStates.right.phase === "locked";
+    if (anyLocked === this.anyLocked) return;
+    this.anyLocked = anyLocked;
+    this.onLockChange(anyLocked);
   }
 
   private applySample(hand: PhysicalHand, sample: { shape: "open" | "fist" | "unknown"; x: number; y: number; t: number }): void {
-    const register = REGISTER_FOR_HAND[hand];
+    const register = this.handRegister[hand];
     const source = `camera:${hand}`;
     const wheel = this.wheels[register];
     const result = stepHandGesture(this.handStates[hand], sample);
     this.handStates[hand] = result.state;
+    wheel.setLocked(this.handStates[hand].phase === "locked");
 
     for (const event of result.events) {
       switch (event.type) {
-        case "wheel-show": {
+        case "wheel-show":
+        case "wheel-lock": {
+          // wheel-lock fires whenever a fist is the very first thing seen
+          // from idle — not only after an open palm's wheel-show — e.g. a
+          // hand that timed out and reappears already curled into a fist,
+          // with no intervening open-palm frame. Without this, the wheel
+          // stayed hidden (never got its wheel-visible class) even though it
+          // was locked and playing: tracking looked dead when it wasn't.
           this.onGesture();
           wheel.setVisible(true);
           this.placeWheel(wheel, event.x, event.y);
           break;
         }
-        case "wheel-move":
-        case "wheel-lock": {
+        case "wheel-move": {
           this.placeWheel(wheel, event.x, event.y);
           break;
         }

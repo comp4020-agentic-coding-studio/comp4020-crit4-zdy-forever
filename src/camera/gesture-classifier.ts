@@ -1,6 +1,8 @@
 // Pure functions over MediaPipe's 21-point hand landmark model. No camera or
 // DOM access here, so this is unit-testable with plain synthetic landmarks.
 // https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker
+import type { Register } from "../music/tables";
+
 export interface Landmark {
   x: number;
   y: number;
@@ -62,11 +64,21 @@ export type MediaPipeHandedness = "Left" | "Right";
 export type PhysicalHand = "left" | "right";
 
 /**
- * MediaPipe's handedness label assumes a mirrored (selfie-style) input image.
- * getUserMedia delivers the raw, unmirrored sensor frame — we only mirror it
- * with CSS for on-screen display — so the label must be swapped to recover
- * which hand the player is physically holding up.
+ * Maps MediaPipe's handedness label to the physical hand. The docs suggest
+ * swapping this for an unmirrored getUserMedia frame, but live testing with a
+ * real camera showed that theory backwards in practice — trust the label
+ * as-is, since the rendered (and heard/played) result is the ground truth.
  */
 export function physicalHandedness(label: MediaPipeHandedness): PhysicalHand {
-  return label === "Left" ? "right" : "left";
+  return label === "Left" ? "left" : "right";
+}
+
+/**
+ * Both hands on screen: left plays LOW, right plays HIGH (the piano
+ * convention). Only one hand on screen: it defaults to HIGH, since that's
+ * the lead register a lone hand most likely wants.
+ */
+export function registerForHand(hand: PhysicalHand, bothHandsVisible: boolean): Register {
+  if (!bothHandsVisible) return "high";
+  return hand === "left" ? "low" : "high";
 }

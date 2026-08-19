@@ -177,6 +177,11 @@ export class Wheel {
     this.element.classList.toggle("wheel-visible", visible);
   }
 
+  /** A floating wheel locked onto a tracked hand grows to become the primary visual. */
+  setLocked(locked: boolean): void {
+    this.element.classList.toggle("wheel-locked", locked);
+  }
+
   setActiveSector(sector: number | null): void {
     this.sectorEls.forEach((el, index) => {
       el.classList.toggle("sector-live", index === sector);

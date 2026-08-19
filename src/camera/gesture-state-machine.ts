@@ -20,7 +20,10 @@ export interface HandGestureState {
   lockedAt: number | null;
   maxDisplacement: number;
   activeSector: number | null;
-  missedFrames: number;
+  /** ms timestamp of the last sample that actually read as a hand (open or
+   * fist), or null while idle. Used to time out a truly-gone hand — see
+   * `missingGraceMs`. */
+  lastSeenAt: number | null;
 }
 
 export const INITIAL_HAND_GESTURE_STATE: HandGestureState = {
@@ -29,7 +32,7 @@ export const INITIAL_HAND_GESTURE_STATE: HandGestureState = {
   lockedAt: null,
   maxDisplacement: 0,
   activeSector: null,
-  missedFrames: 0,
+  lastSeenAt: null,
 };
 
 export interface HandGestureConfig {
@@ -41,8 +44,16 @@ export interface HandGestureConfig {
   toggleMaxDurationMs: number;
   /** Displacement (from the lock anchor) below this still counts as "didn't move" for a toggle. */
   toggleMaxDisplacement: number;
-  /** Consecutive unreadable/missing samples before the hand is treated as gone. */
-  missedFrameLimit: number;
+  /**
+   * How long an unreadable/missing hand is tolerated before it's treated as
+   * gone. Time-based, not a frame count: `detectForVideo` runs on whatever
+   * CPU is available, so a fixed number of frames is a wildly different
+   * duration on a fast machine versus a loaded one. A closed fist also
+   * genuinely reads as lower-confidence to MediaPipe than an open palm (fewer
+   * visible landmarks), so brief drops mid-play are routine on real camera
+   * input, not a sign the hand actually left.
+   */
+  missingGraceMs: number;
 }
 
 export const DEFAULT_HAND_GESTURE_CONFIG: HandGestureConfig = {
@@ -50,7 +61,7 @@ export const DEFAULT_HAND_GESTURE_CONFIG: HandGestureConfig = {
   activationRadius: 0.22,
   toggleMaxDurationMs: 700,
   toggleMaxDisplacement: 0.03,
-  missedFrameLimit: 6,
+  missingGraceMs: 400,
 };
 
 export type HandGestureEvent =
@@ -74,18 +85,18 @@ function lockAt(x: number, y: number, t: number): HandGestureState {
     lockedAt: t,
     maxDisplacement: 0,
     activeSector: null,
-    missedFrames: 0,
+    lastSeenAt: t,
   };
 }
 
-function following(): HandGestureState {
+function following(t: number): HandGestureState {
   return {
     phase: "following",
     anchor: null,
     lockedAt: null,
     maxDisplacement: 0,
     activeSector: null,
-    missedFrames: 0,
+    lastSeenAt: t,
   };
 }
 
@@ -96,10 +107,9 @@ export function stepHandGesture(
   config: HandGestureConfig = DEFAULT_HAND_GESTURE_CONFIG,
 ): HandGestureResult {
   if (sample.shape === "unknown") {
-    const missedFrames = state.missedFrames + 1;
-    if (state.phase === "idle" || missedFrames < config.missedFrameLimit) {
-      return { state: { ...state, missedFrames }, events: [] };
-    }
+    if (state.phase === "idle") return { state, events: [] };
+    const elapsed = state.lastSeenAt === null ? Infinity : sample.t - state.lastSeenAt;
+    if (elapsed < config.missingGraceMs) return { state, events: [] };
     const events: HandGestureEvent[] = [];
     if (state.activeSector !== null) events.push({ type: "silence" });
     events.push({ type: "wheel-hide" });
@@ -120,17 +130,20 @@ export function stepHandGesture(
         events.push({ type: "toggle" });
       }
       events.push({ type: "wheel-move", x: sample.x, y: sample.y });
-      return { state: following(), events };
+      return { state: following(sample.t), events };
     }
     if (state.phase === "following") {
-      return { state, events: [{ type: "wheel-move", x: sample.x, y: sample.y }] };
+      return { state: { ...state, lastSeenAt: sample.t }, events: [{ type: "wheel-move", x: sample.x, y: sample.y }] };
     }
-    return { state: following(), events: [{ type: "wheel-show", x: sample.x, y: sample.y }] };
+    return { state: following(sample.t), events: [{ type: "wheel-show", x: sample.x, y: sample.y }] };
   }
 
   // shape === "fist"
   if (state.phase !== "locked") {
-    return { state: lockAt(sample.x, sample.y, sample.t), events: [{ type: "wheel-lock", x: sample.x, y: sample.y }] };
+    return {
+      state: lockAt(sample.x, sample.y, sample.t),
+      events: [{ type: "wheel-lock", x: sample.x, y: sample.y }],
+    };
   }
 
   const anchor = state.anchor as { x: number; y: number };
@@ -138,17 +151,24 @@ export function stepHandGesture(
   const dy = sample.y - anchor.y;
   const distance = Math.hypot(dx, dy);
   const maxDisplacement = Math.max(state.maxDisplacement, distance);
-  const missedFrames = 0;
 
   if (distance <= config.deadZone) {
     const events: HandGestureEvent[] = state.activeSector !== null ? [{ type: "silence" }] : [];
-    return { state: { ...state, maxDisplacement, activeSector: null, missedFrames }, events };
+    return {
+      state: { ...state, maxDisplacement, activeSector: null, lastSeenAt: sample.t },
+      events,
+    };
   }
 
   const sector = sectorFromDisplacement(dx, dy);
   const gain = clamp((distance - config.deadZone) / (config.activationRadius - config.deadZone), 0, 1);
+  // Only fire on a sector *change* — every frame the fist just sits in the
+  // same sector re-emitting "play" would retrigger the note ~30x/sec, which
+  // reads as noise on Piano and as constant re-attack (never a sustain) on
+  // the monophonic Violin.
+  const events: HandGestureEvent[] = sector === state.activeSector ? [] : [{ type: "play", sector, gain }];
   return {
-    state: { ...state, maxDisplacement, activeSector: sector, missedFrames },
-    events: [{ type: "play", sector, gain }],
+    state: { ...state, maxDisplacement, activeSector: sector, lastSeenAt: sample.t },
+    events,
   };
 }
