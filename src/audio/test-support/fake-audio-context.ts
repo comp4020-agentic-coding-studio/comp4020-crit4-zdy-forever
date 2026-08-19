@@ -63,6 +63,7 @@ export class FakeBiquadFilterNode extends FakeAudioNode {
   type = "lowpass";
   frequency = new FakeAudioParam(350);
   Q = new FakeAudioParam(1);
+  gain = new FakeAudioParam(0);
 }
 
 export class FakeOscillatorNode extends FakeAudioNode {
@@ -84,8 +85,43 @@ export class FakeOscillatorNode extends FakeAudioNode {
   }
 }
 
+export class FakeAudioBuffer {
+  private readonly channels: Float32Array[];
+
+  constructor(
+    public numberOfChannels: number,
+    public length: number,
+    public sampleRate: number,
+  ) {
+    this.channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
+  }
+
+  getChannelData(channel: number): Float32Array {
+    return this.channels[channel];
+  }
+}
+
+export class FakeAudioBufferSourceNode extends FakeAudioNode {
+  buffer: FakeAudioBuffer | null = null;
+  loop = false;
+  started = false;
+  stopped = false;
+
+  start(): void {
+    this.started = true;
+  }
+
+  /** Fires 'ended' synchronously — real timing doesn't matter for logic tests. */
+  stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.dispatch("ended");
+  }
+}
+
 export class FakeAudioContext {
   currentTime = 0;
+  sampleRate = 44100;
   destination = new FakeAudioNode();
   /** Every oscillator this context has ever created, in creation order. */
   readonly oscillators: FakeOscillatorNode[] = [];
@@ -102,5 +138,13 @@ export class FakeAudioContext {
     const osc = new FakeOscillatorNode();
     this.oscillators.push(osc);
     return osc;
+  }
+
+  createBuffer(numberOfChannels: number, length: number, sampleRate: number): FakeAudioBuffer {
+    return new FakeAudioBuffer(numberOfChannels, length, sampleRate);
+  }
+
+  createBufferSource(): FakeAudioBufferSourceNode {
+    return new FakeAudioBufferSourceNode();
   }
 }

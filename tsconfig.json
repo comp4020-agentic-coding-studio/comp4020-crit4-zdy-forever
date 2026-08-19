@@ -6,6 +6,10 @@
     // Imports name the file they mean, extension and all --- which is what
     // node itself wants when it runs a .ts file directly.
     "allowImportingTsExtensions": true,
+    // public/violin-worklet.js is plain JS on purpose: an AudioWorklet module
+    // is fetched by URL at runtime rather than bundled, so it can't be a .ts.
+    // Types are inferred from it; `checkJs` stays off, since it is generated.
+    "allowJs": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["vite/client", "node"],
     "strict": true,

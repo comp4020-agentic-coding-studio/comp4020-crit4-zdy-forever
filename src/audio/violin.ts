@@ -1,125 +1,136 @@
 import type { Instrument, VoiceHandle } from "./instrument";
+import { ViolinFallback } from "./violin-fallback";
 
-// A bowed-string approximation: a sawtooth source (rich in harmonics, like a
-// bowed edge) through a gentle lowpass, a slower attack than Piano, a
-// sustained plateau, and subtle vibrato that fades in after the attack
-// settles. Monophonic by construction: every noteOn steals the previous
-// voice, and a handle from a stolen voice becomes permanently inert (its
-// generation no longer matches `current`), so a stray noteOff from whichever
-// input source lost the race is safely a no-op.
+// The violin's sound is made sample by sample on the audio thread, in
+// public/violin-worklet.js. Four attempts to build it out of Web Audio nodes
+// were rejected by ear in a row (brass, big brass, synthesiser, electric
+// guitar), because a node graph can only offer one periodic source through
+// one filter chain under one envelope -- a topology that forces every
+// harmonic to move in lockstep and yields a smooth, monotonic harmonic
+// series. A bowed string is the opposite of that, so the synthesis had to
+// move somewhere it could address partials individually.
+//
+// That worklet is generated, not hand-written: tools/violin-lab renders
+// candidate timbres to WAV offline so they can be auditioned without
+// rebuilding the page, and build-worklet.mjs assembles the shipped file from
+// the candidate that was chosen, verbatim. `node
+// tools/violin-lab/verify-worklet.mjs` re-renders both and asserts they are
+// sample-identical, so what ships stays what was approved.
+//
+// This class is the main-thread half: it owns one persistent worklet node
+// (the instrument is monophonic, so one node serves every note) and speaks to
+// it by message. Until the module loads -- and forever, if the browser has no
+// AudioWorklet -- it delegates to the old node-graph implementation, because
+// a worse timbre beats a silent instrument.
 
-const ATTACK = 0.09;
-const SUSTAIN_LEVEL = 0.55;
-const NORMAL_RELEASE = 0.16;
-const STEAL_RELEASE = 0.04;
-const VIBRATO_RATE = 5.2;
-const VIBRATO_DEPTH_CENTS = 6;
-const VIBRATO_FADE_IN = 0.35;
-const MAX_HOLD_MS = 30_000;
+const PROCESSOR_NAME = "violin-voice";
+const MODULE_FILE = "violin-worklet.js";
 
-interface ViolinVoiceHandle extends VoiceHandle {
-  readonly generation: number;
-}
+// Measured through the running page: holding one note, the violin's sustained
+// RMS sat 4 dB under the piano's, so switching instruments dropped the volume.
+// Corrected here rather than inside the worklet, so the DSP stays byte-for-byte
+// the code that was auditioned and approved -- this is a level, not a timbre.
+const OUTPUT_GAIN = 1.35;
 
-interface ActiveVoice {
-  generation: number;
-  oscillator: OscillatorNode;
-  vibratoLfo: OscillatorNode;
-  vibratoGain: GainNode;
-  envelope: GainNode;
-  safety: ReturnType<typeof setTimeout>;
-}
+type ViolinHandle =
+  | { readonly viaWorklet: true; readonly generation: number }
+  | { readonly viaWorklet: false; readonly inner: VoiceHandle };
 
 export class Violin implements Instrument {
   readonly id = "violin";
   readonly polyphonic = false;
+  private node: AudioWorkletNode | null = null;
   private generation = 0;
-  private current: ActiveVoice | null = null;
+  private warmFrequencies: number[] = [];
+  private readonly fallback: ViolinFallback;
 
   constructor(
     private readonly context: AudioContext,
     private readonly destination: AudioNode,
-  ) {}
+  ) {
+    this.fallback = new ViolinFallback(context, destination);
+    void this.loadWorklet();
+  }
+
+  /** True once the worklet is carrying the sound. Exposed for tests and for
+   * anything that wants to report which path is live. */
+  get usingWorklet(): boolean {
+    return this.node !== null;
+  }
+
+  /**
+   * Pre-builds a voice for each pitch the instrument can play. The synthesis
+   * calibrates its noise path the first time it sees a pitch, which costs
+   * about a millisecond -- most of a 128-sample render quantum -- so paying it
+   * during a note-on risks a dropout on the very first note of each pitch.
+   * Safe to call before the module has loaded; the list is sent on arrival.
+   */
+  warmUp(frequencies: readonly number[]): void {
+    this.warmFrequencies = [...frequencies];
+    this.node?.port.postMessage({ type: "warm", frequencies: this.warmFrequencies });
+  }
 
   noteOn(frequency: number, velocity: number): VoiceHandle {
-    this.stopCurrent(STEAL_RELEASE);
-
-    const t0 = this.context.currentTime;
-    const peak = 0.5 * clamp(velocity, 0.2, 1);
-    this.generation += 1;
-    const generation = this.generation;
-
-    const filter = this.context.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = clamp(frequency * 4, 700, 4500);
-    filter.Q.value = 0.4;
-    filter.connect(this.destination);
-
-    const envelope = this.context.createGain();
-    envelope.gain.setValueAtTime(0, t0);
-    envelope.gain.linearRampToValueAtTime(peak, t0 + ATTACK);
-    envelope.gain.linearRampToValueAtTime(peak * SUSTAIN_LEVEL, t0 + ATTACK + 0.25);
-    envelope.connect(filter);
-
-    const oscillator = this.context.createOscillator();
-    oscillator.type = "sawtooth";
-    oscillator.frequency.value = frequency;
-    oscillator.connect(envelope);
-    oscillator.start(t0);
-
-    // Vibrato: an LFO modulating detune, faded in so a short note stays clean.
-    const vibratoLfo = this.context.createOscillator();
-    vibratoLfo.type = "sine";
-    vibratoLfo.frequency.value = VIBRATO_RATE;
-    const vibratoGain = this.context.createGain();
-    vibratoGain.gain.setValueAtTime(0, t0);
-    vibratoGain.gain.linearRampToValueAtTime(VIBRATO_DEPTH_CENTS, t0 + ATTACK + VIBRATO_FADE_IN);
-    vibratoLfo.connect(vibratoGain);
-    vibratoGain.connect(oscillator.detune);
-    vibratoLfo.start(t0);
-
-    this.current = {
-      generation,
-      oscillator,
-      vibratoLfo,
-      vibratoGain,
-      envelope,
-      safety: setTimeout(() => this.stopCurrent(NORMAL_RELEASE), MAX_HOLD_MS),
-    };
-    return { generation } satisfies ViolinVoiceHandle;
+    if (this.node) {
+      this.generation += 1;
+      this.node.port.postMessage({
+        type: "noteOn",
+        frequency,
+        velocity,
+        generation: this.generation,
+      });
+      return { viaWorklet: true, generation: this.generation } satisfies ViolinHandle;
+    }
+    return { viaWorklet: false, inner: this.fallback.noteOn(frequency, velocity) } satisfies ViolinHandle;
   }
 
   noteOff(handle: VoiceHandle): void {
-    const { generation } = handle as ViolinVoiceHandle;
-    if (this.current?.generation !== generation) return; // already stolen
-    this.stopCurrent(NORMAL_RELEASE);
+    const violinHandle = handle as ViolinHandle;
+    // A handle minted by the path that is no longer live is simply inert --
+    // the same "already stolen" no-op a monophonic instrument owes any stale
+    // release, so a note held across the worklet's arrival can't strand a
+    // voice or throw.
+    if (violinHandle.viaWorklet) {
+      this.node?.port.postMessage({ type: "noteOff", generation: violinHandle.generation });
+      return;
+    }
+    this.fallback.noteOff(violinHandle.inner);
   }
 
   allNotesOff(): void {
-    this.stopCurrent(0.03);
+    this.node?.port.postMessage({ type: "allOff" });
+    this.fallback.allNotesOff();
   }
 
-  private stopCurrent(release: number): void {
-    const voice = this.current;
-    if (!voice) return;
-    this.current = null;
-    clearTimeout(voice.safety);
-
-    const t0 = this.context.currentTime;
-    voice.envelope.gain.cancelScheduledValues(t0);
-    voice.envelope.gain.setTargetAtTime(0, t0, release / 3);
-    const stopAt = t0 + release + 0.05;
-    voice.oscillator.stop(stopAt);
-    voice.vibratoLfo.stop(stopAt);
-    voice.oscillator.addEventListener("ended", () => {
-      voice.envelope.disconnect();
-      voice.oscillator.disconnect();
-      voice.vibratoGain.disconnect();
-      voice.vibratoLfo.disconnect();
-    });
+  private async loadWorklet(): Promise<void> {
+    // Every failure below is a silent downgrade to the fallback, never a
+    // throw: no AudioWorklet (old browser, or a non-secure context), a module
+    // that 404s, a processor that fails to register.
+    if (typeof AudioWorkletNode === "undefined" || !this.context.audioWorklet) return;
+    try {
+      // Resolved against the document, not this module: the worklet lives in
+      // public/ and is copied to the site root, and the site is served from a
+      // GitHub Pages sub-path.
+      const url = new URL(MODULE_FILE, document.baseURI).href;
+      await this.context.audioWorklet.addModule(url);
+      const node = new AudioWorkletNode(this.context, PROCESSOR_NAME, {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+      });
+      const trim = this.context.createGain();
+      trim.gain.value = OUTPUT_GAIN;
+      node.connect(trim);
+      trim.connect(this.destination);
+      if (this.warmFrequencies.length > 0) {
+        node.port.postMessage({ type: "warm", frequencies: this.warmFrequencies });
+      }
+      // Anything the fallback is holding would otherwise sustain underneath
+      // the worklet's first note, with no handle able to reach it.
+      this.fallback.allNotesOff();
+      this.node = node;
+    } catch {
+      this.node = null;
+    }
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
