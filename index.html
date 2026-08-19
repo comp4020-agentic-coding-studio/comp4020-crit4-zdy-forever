@@ -13,29 +13,56 @@
       </nav>
     </header>
     <main>
-      <h1 class="invitation">MOVE. PRESS. PLAY.</h1>
-
-      <div class="toolbar">
-        <div class="instrument-select" role="group" aria-label="Instrument">
-          <button type="button" class="pill" data-instrument="piano" aria-pressed="true">
-            PIANO
-          </button>
-          <button type="button" class="pill" data-instrument="violin" aria-pressed="false">
-            VIOLIN
+      <div class="hud">
+        <div class="toolbar">
+          <div class="instrument-select" role="group" aria-label="Instrument">
+            <button type="button" class="pill" data-instrument="piano" aria-pressed="true">
+              PIANO
+            </button>
+            <button type="button" class="pill" data-instrument="violin" aria-pressed="false">
+              VIOLIN
+            </button>
+          </div>
+          <button type="button" class="pill camera-button" id="camera-toggle" aria-pressed="false">
+            Enable Camera
           </button>
         </div>
-        <button type="button" class="pill camera-button" id="camera-toggle" aria-pressed="false">
-          Enable Camera
-        </button>
+
+        <p class="camera-status" id="camera-status" role="status" aria-live="polite"></p>
       </div>
 
-      <p class="camera-status" id="camera-status" role="status" aria-live="polite"></p>
+      <h1 class="invitation">MOVE. PRESS. PLAY.</h1>
 
       <div class="stage" id="stage">
         <div class="camera-layer" id="camera-layer" aria-hidden="true"></div>
         <div class="wheels" id="wheels"></div>
       </div>
     </main>
+
+    <dialog id="intro-modal" class="intro-modal">
+      <form method="dialog" class="intro-modal-card">
+        <h2>Two Hands — a live browser instrument</h2>
+        <p>Everything you hear is synthesised live in this page — nothing is pre-recorded.</p>
+        <ul>
+          <li><strong>Two registers:</strong> LOW (C3–C4) and HIGH (C4–C5), each its own wheel.</li>
+          <li>
+            <strong>NOTE / CHORD:</strong> press a wheel's centre button to switch it between a
+            single note and a triad per sector.
+          </li>
+          <li>
+            <strong>Play:</strong> use your keyboard, mouse, or touch on each sector — number keys
+            1 and 0 also toggle NOTE/CHORD.
+          </li>
+          <li>
+            <strong>Optional camera:</strong> click "Enable Camera" to play hands-free — an open
+            palm shows a wheel, a fist locks it, and reaching in a direction plays that sector.
+          </li>
+          <li><strong>Piano</strong> plays many notes at once; <strong>Violin</strong> plays one at a time.</li>
+        </ul>
+        <button type="submit" class="pill intro-modal-close" autofocus>Start Playing</button>
+      </form>
+    </dialog>
+
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

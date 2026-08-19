@@ -71,6 +71,7 @@ main {
   align-items: center;
   gap: 1rem;
   flex: 1;
+  padding-top: 6.5rem;
 }
 
 .invitation {
@@ -86,11 +87,23 @@ main {
 
 /* --- toolbar --------------------------------------------------------- */
 
+.hud {
+  position: fixed;
+  top: calc(3rem + var(--safe-top));
+  left: calc(1rem + env(safe-area-inset-left, 0px));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  max-width: min(90vw, 26rem);
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
 }
 
@@ -157,7 +170,7 @@ main {
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   color: var(--ink-dim);
-  text-align: center;
+  text-align: left;
 }
 
 /* --- stage & wheels ---------------------------------------------------- */
@@ -171,7 +184,7 @@ main {
 }
 
 .camera-layer {
-  position: absolute;
+  position: fixed;
   inset: 0;
   opacity: 0;
   pointer-events: none;
@@ -184,12 +197,11 @@ main {
 }
 
 .camera-feed {
-  position: absolute;
+  position: fixed;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 1.5rem;
   background: #000;
   transform: scaleX(-1); /* mirror the selfie camera */
   opacity: 0.5;
@@ -409,6 +421,62 @@ button.wheel-center:disabled {
   opacity: 0.55;
 }
 
+/* --- intro modal --------------------------------------------------------- */
+
+.intro-modal {
+  border: none;
+  border-radius: 1.25rem;
+  padding: 0;
+  max-width: min(92vw, 30rem);
+  max-height: 85dvh;
+  background: transparent;
+  color: var(--ink);
+}
+
+.intro-modal::backdrop {
+  background: rgb(4 6 10 / 70%);
+  backdrop-filter: blur(6px);
+}
+
+.intro-modal-card {
+  margin: 0;
+  padding: 1.75rem;
+  border-radius: 1.25rem;
+  background: rgb(14 16 26 / 78%);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 55%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.intro-modal-card h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  letter-spacing: 0.02em;
+}
+
+.intro-modal-card p,
+.intro-modal-card li {
+  font-size: 0.85rem;
+  color: var(--ink-dim);
+  line-height: 1.5;
+}
+
+.intro-modal-card ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.intro-modal-close {
+  align-self: flex-start;
+  margin-top: 0.4rem;
+}
+
 /* --- responsiveness ----------------------------------------------------- */
 
 @media (width <= 640px) {
@@ -418,6 +486,14 @@ button.wheel-center:disabled {
 
   .wheel {
     width: min(72vw, 320px);
+  }
+
+  .hud {
+    max-width: min(94vw, 22rem);
+  }
+
+  .intro-modal-card {
+    padding: 1.25rem;
   }
 }
 

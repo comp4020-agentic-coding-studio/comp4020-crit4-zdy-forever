@@ -70,6 +70,17 @@ export function startApp(): void {
   window.addEventListener("keydown", onGesture, { once: true });
 
   setUpCamera(engine, onGesture);
+  setUpIntroModal(onGesture);
+}
+
+/** Shown on every visit (not just the first) so a player never has to go
+ * hunting for how the wheels work; dismissing it doubles as the very first
+ * user gesture, so it also unlocks audio. */
+function setUpIntroModal(onGesture: () => void): void {
+  const modal = document.querySelector<HTMLDialogElement>("#intro-modal");
+  if (!modal) return;
+  modal.addEventListener("close", onGesture, { once: true });
+  modal.showModal();
 }
 
 /**
