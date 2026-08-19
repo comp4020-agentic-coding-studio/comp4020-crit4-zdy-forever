@@ -19,7 +19,22 @@ own test fixture before it ever reached real code.
 
 **What did this work change about who I want to be as a software developer?**
 
-<!-- TEMPLATE: this half is yours. It asks what the work changed about you,
-     and that's not something anyone else can answer on your behalf --- fill
-     it in with what actually shifted for you working through Crit 4, then
-     delete this comment. -->
+I got more comfortable saying "still wrong" instead of settling. The Violin's
+timbre got rejected by ear four times in a row, and each time it would have
+been easy to accept a slightly-better-than-before result rather than push for
+a fundamentally different approach. The turning point was realising that
+repeated failure of the *same kind* is information: it meant the whole
+technique, not the parameters, was wrong, and no amount of further tuning
+was going to fix it. That's a habit I want to keep — treating a pattern of
+similar failures as a signal to change direction, not as a reason to try
+harder at the same thing.
+
+The other shift was about where truth lives. A green `pnpm check` and code
+that reads correctly both told me nothing about whether two hands would
+fight over the same wheel on real, noisy camera input, or whether a chord
+actually clipped through real speakers. Every bug worth finding this round
+only showed up by actually using the thing — on hardware, by ear, frame by
+frame. I want to carry that forward: build fast ways to check the real
+thing (the offline audition lab, a controller driven by a fake camera feed)
+rather than trusting that a clean abstraction and a passing test suite mean
+the system behaves correctly end to end.

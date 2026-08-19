@@ -17,7 +17,9 @@ Two Hands: a browser instrument with no backend and no prerecorded audio.
 Two independently controllable registers (LOW C3--C4, HIGH C4--C5), each an
 eight-sector "liquid-glass" wheel that plays a note per sector in NOTE mode or
 a triad in CHORD mode, live through the Web Audio API. Piano is polyphonic;
-Violin is strictly monophonic with last-note-priority voice stealing. Keyboard,
+Violin is strictly monophonic with last-note-priority voice stealing, and its
+timbre is sample-level DSP running in an `AudioWorkletProcessor` rather than
+a Web Audio node graph. Keyboard,
 mouse, and touch (via Pointer Events) all drive the same central
 `MusicEngine`, and an optional camera mode layers two-hand tracking
 (MediaPipe Tasks Vision) on top as progressive enhancement: an open palm
@@ -88,6 +90,52 @@ quick, stationary OPEN-FIST-OPEN toggles NOTE/CHORD instead.
    The lesson: a passing test suite proves the parts I thought to test are
    correct, not that the whole system is; only actually looking at the running
    page surfaced this one.
+
+5. **Four rejections in a row meant the problem was the technique, not the
+   numbers, so I stopped tuning and built a way to test techniques fast.**
+   Every Violin patch up to this point was a Web Audio node graph --- one
+   periodic oscillator through one filter chain under one envelope --- and
+   each rewrite was rejected by ear in turn: wind instrument, then big brass,
+   then synthesiser, then electric guitar. That topology structurally cannot
+   produce what a bowed string needs (independently-moving partials, a
+   genuinely noisy attack), so a fifth tuned variant of the same shape would
+   have failed the same way. Rather than guess again through a slow
+   edit-rebuild-replay loop, I built `tools/violin-lab/`: candidates are pure
+   sample-level JS with no Web Audio nodes at all, rendered straight to WAV in
+   Node so a timbre could be judged by ear with `afplay` in seconds. That let
+   several genuinely different synthesis techniques get compared in one pass
+   instead of one guess at a time, and once one was picked,
+   `build-worklet.mjs` assembles the shipped `public/violin-worklet.js` from
+   that exact candidate file, verbatim, with `verify-worklet.mjs` asserting
+   the two render sample-identical output
+   ([`f6cd0e5`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/f6cd0e5)).
+   The lesson wasn't really about audio DSP: it was that repeated rejection of
+   the same *kind* of fix is a signal to change the approach, not the
+   parameters, and that it's worth spending effort building a faster feedback
+   loop before spending more effort guessing inside a slow one.
+
+6. **Simulating a real camera frame-by-frame surfaced bugs a fixed-tick test
+   suite structurally can't.** `gesture-state-machine.test.ts` already proved
+   the pure per-hand reducer correct, but every bug in this round lived one
+   layer up, in how `camera-controller.ts` drives two hands' worth of that
+   reducer from an actual, noisy MediaPipe feed --- and every one of them
+   was invisible until I drove the real controller with a fake camera feed
+   in a real browser (`camera-controller.test.ts`), not a fixed 16ms-tick
+   sample sequence. Two hands could end up fighting over one `Wheel` object
+   because a hand's register got reconciled even on a frame where it wasn't
+   detected at all --- a single dropped frame, routine on real hardware, made
+   it look "alone" and reassign it onto the other hand's register. Hand-loss
+   was judged by a fixed frame count, which is a wildly different wall-clock
+   delay depending on how fast `detectForVideo` happens to be running, so it
+   fired mid-play on ordinary tracking noise. And once a hand could reappear
+   already a fist instead of an open palm, its `wheel-visible` and
+   `wheel-locked` CSS classes landed on the same tick, which meant the grow
+   transition finished before the fade-in did --- correct on paper, invisible
+   in practice
+   ([`8cc3ec8`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/8cc3ec8)).
+   None of these were things I could have found by reading the reducer's
+   tests more carefully; they only exist at the seam between "pure logic" and
+   "what a real, imperfect sensor actually sends it."
 
 ## Before you ship
 
