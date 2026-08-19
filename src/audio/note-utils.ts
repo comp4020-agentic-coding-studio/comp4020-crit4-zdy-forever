@@ -1,6 +1,6 @@
 // Equal-temperament frequency calculation, A4 = 440 Hz.
-// Scientific pitch notation (C4 = MIDI 60), naturals only — this instrument
-// never needs a sharp or flat.
+// Scientific pitch notation (C4 = MIDI 60), naturals plus an optional sharp
+// (e.g. "F#3") — chord tables need those for a major triad on every root.
 
 const NATURAL_SEMITONE: Record<string, number> = {
   C: 0,
@@ -12,13 +12,13 @@ const NATURAL_SEMITONE: Record<string, number> = {
   B: 11,
 };
 
-/** Parses e.g. "C3" -> MIDI note number 48. Throws on anything else. */
+/** Parses e.g. "C3" -> 48, "F#3" -> 54. Throws on anything else. */
 export function noteNameToMidi(note: string): number {
-  const match = /^([A-G])(-?\d+)$/.exec(note);
-  if (!match) throw new Error(`not a natural-note name: ${note}`);
-  const [, letter, octaveStr] = match;
+  const match = /^([A-G])(#?)(-?\d+)$/.exec(note);
+  if (!match) throw new Error(`not a note name: ${note}`);
+  const [, letter, sharp, octaveStr] = match;
   const octave = Number.parseInt(octaveStr, 10);
-  return (octave + 1) * 12 + NATURAL_SEMITONE[letter];
+  return (octave + 1) * 12 + NATURAL_SEMITONE[letter] + (sharp ? 1 : 0);
 }
 
 export function midiToFrequency(midi: number): number {

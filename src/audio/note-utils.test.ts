@@ -18,8 +18,13 @@ describe("equal-temperament frequency calculation", () => {
     expect(noteNameToFrequency("C4") / noteNameToFrequency("C3")).toBeCloseTo(2, 6);
   });
 
-  it("rejects anything that isn't a natural note name", () => {
-    expect(() => noteNameToFrequency("C#4")).toThrow();
+  it("accepts a sharp, one semitone above the natural", () => {
+    expect(noteNameToMidi("C#4")).toBe(61);
+    expect(noteNameToFrequency("C#4") / noteNameToFrequency("C4")).toBeCloseTo(2 ** (1 / 12), 6);
+  });
+
+  it("rejects anything that isn't a natural or sharp note name", () => {
+    expect(() => noteNameToFrequency("Cb4")).toThrow();
     expect(() => noteNameToFrequency("H4")).toThrow();
   });
 });
