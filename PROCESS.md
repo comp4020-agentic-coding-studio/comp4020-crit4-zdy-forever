@@ -18,9 +18,9 @@ Two independently controllable registers (LOW C3--C4, HIGH C4--C5), each an
 eight-sector "liquid-glass" wheel that plays a note per sector in NOTE mode or
 a triad in CHORD mode, live through the Web Audio API. Piano is polyphonic;
 Violin is strictly monophonic with last-note-priority voice stealing, and its
-timbre is sample-level DSP running in an `AudioWorkletProcessor` rather than
-a Web Audio node graph. Keyboard,
-mouse, and touch (via Pointer Events) all drive the same central
+timbre is sample-level DSP running in an `AudioWorkletProcessor` rather than a
+Web Audio node graph. Keyboard, mouse, and touch (via Pointer Events) all
+drive the same central
 `MusicEngine`, and an optional camera mode layers two-hand tracking
 (MediaPipe Tasks Vision) on top as progressive enhancement: an open palm
 summons a floating echo of a register's wheel, a fist locks it and reaching
@@ -31,111 +31,78 @@ quick, stationary OPEN-FIST-OPEN toggles NOTE/CHORD instead.
 
 1. **The spec's own audio/video ban shaped the camera architecture, not just
    its DOM.** `spec/instrument.test.ts` fails the whole build if any built
-   HTML contains an `<audio>`/`<video>` tag, since a real tag is how a static
-   site would fake "live" sound with a recording. The camera feature needs a
-   `<video>` element to feed MediaPipe, so I couldn't just drop one in
-   `index.html`. Instead `hand-tracker.ts` creates the element at runtime, only
-   once the player explicitly clicks "Enable Camera", and `camera-controller.ts`
-   mounts it into `#camera-layer` itself
+   HTML contains an `<audio>`/`<video>` tag, and the camera feature needs a
+   `<video>` element to feed MediaPipe. The obvious move was to drop one in
+   `index.html` and let the check catch anything that made it a fallback for
+   real audio; instead `hand-tracker.ts` creates the element at runtime, only
+   once the player explicitly clicks "Enable Camera", so the static markup
+   never contains one at all, on or off
    ([`abd7d40`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/abd7d40)).
-   I knew it held because I re-ran `pnpm build` and grepped `dist/**/*.html` for
-   `<video`/`<audio>` by hand before trusting the automated check again --- the
-   static markup genuinely never gains one, camera on or off.
+   I knew it held because I re-ran `pnpm build` and grepped `dist/**/*.html`
+   for `<video`/`<audio>` by hand before trusting the automated check again.
 
-2. **stylelint's kebab-case rule caught a BEM habit I didn't notice I still
-   had.** I wrote the whole liquid-glass stylesheet using BEM's `block--modifier`
-   convention (`wheel--chord`, `sector--active`, ...), which is idiomatic CSS
-   but fails this repo's `stylelint-config-standard` `selector-class-pattern`
-   rule --- it wants single-dash kebab-case only. `stylelint --fix` fixed 131 of
-   143 errors on its own but left every BEM double-dash alone, since renaming a
-   class isn't a safe autofix. Rather than loosen the rule, I renamed every
-   modifier class to single-dash form across both `styles.css` and
-   `wheel.ts`
-   ([`272d0b2`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/272d0b2)).
-   I checked it was really fixed, not just quieter, by re-running
-   `stylelint styles.css` to zero errors and then grepping both files for the
-   old `--` names to confirm nothing still referenced them.
-
-3. **The camera's gesture logic is designed to need no camera to test.** The
-   spec calls out that gesture-sequence classification should be pure and
-   testable without fake hardware. `gesture-state-machine.ts` takes it
-   literally: `stepHandGesture(state, sample)` is a plain reducer over
-   `{shape, x, y, t}` samples with no DOM or MediaPipe dependency, so the
-   trickiest behavioural rule --- a quick, stationary OPEN-FIST-OPEN is a mode
-   toggle, but the same sequence with enough displacement or duration is a
-   played note followed by a release --- is asserted directly in
-   `gesture-state-machine.test.ts` with synthetic sample sequences, no camera or
-   even a browser involved
-   ([`ca87dc4`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/ca87dc4)).
-   Both the duration threshold and the displacement threshold are exercised as
-   independent gating conditions, which is what told me the disambiguation
-   logic was actually doing its job and not just passing the happy path.
-
-4. **Actually opening the page in a real browser caught a bug that reading
-   the code and a green `pnpm check` both missed.** CLAUDE.md says the
-   rendered page is the truth, not my mental model of it, so once a real
-   Chrome instance was available I drove the built site directly: switched to
-   Violin, held two keys on the same register at once, and watched --- both
-   sectors stayed lit, even though `violin.ts`'s voice-stealing correctly
-   silences the older oscillator. The audio was right; the wheel was lying
-   about which note was actually sounding. The cause was that
-   `MusicEngine.attack()` tracked "active" per input source, not per instrument
-   voice, so a source that was still physically held kept showing its sector
-   as sounding after a monophonic instrument had silently stolen its note out
-   from under it. I fixed it by having `attack()` release every other source
-   once a monophonic instrument's note lands, added a unit test for it, then
-   reopened the same two-keys-held sequence in the browser to confirm only
-   the newer sector stayed lit
+2. **A real browser caught a bug a green `pnpm check` couldn't, and the fix
+   went into the test suite, not just the code.** Holding two keys on the
+   same Violin register at once left both sectors lit on the wheel, even
+   though the audio was correct (voice-stealing had silenced the older
+   note). The obvious fix was Violin-specific --- patch its own UI
+   reporting --- but the bug wasn't really Violin's: `MusicEngine.attack()`
+   tracked "active" per input source, not per instrument voice, so *any*
+   monophonic instrument would eventually show the same lie. I fixed it at
+   that layer instead: releasing every other source once a monophonic
+   instrument's note lands. I knew it held because I added a unit test for
+   exactly that behaviour, watched it fail against the old code, then
+   reopened the same two-keys-held sequence in the browser and watched only
+   the newer sector stay lit
    ([`06da29f`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/06da29f)).
-   The lesson: a passing test suite proves the parts I thought to test are
-   correct, not that the whole system is; only actually looking at the running
-   page surfaced this one.
 
-5. **Four rejections in a row meant the problem was the technique, not the
-   numbers, so I stopped tuning and built a way to test techniques fast.**
-   Every Violin patch up to this point was a Web Audio node graph --- one
-   periodic oscillator through one filter chain under one envelope --- and
-   each rewrite was rejected by ear in turn: wind instrument, then big brass,
-   then synthesiser, then electric guitar. That topology structurally cannot
-   produce what a bowed string needs (independently-moving partials, a
-   genuinely noisy attack), so a fifth tuned variant of the same shape would
-   have failed the same way. Rather than guess again through a slow
-   edit-rebuild-replay loop, I built `tools/violin-lab/`: candidates are pure
-   sample-level JS with no Web Audio nodes at all, rendered straight to WAV in
-   Node so a timbre could be judged by ear with `afplay` in seconds. That let
-   several genuinely different synthesis techniques get compared in one pass
-   instead of one guess at a time, and once one was picked,
-   `build-worklet.mjs` assembles the shipped `public/violin-worklet.js` from
-   that exact candidate file, verbatim, with `verify-worklet.mjs` asserting
-   the two render sample-identical output
+3. **Four rejections in a row meant the problem was the technique, not the
+   numbers, so instead of a fifth retry I built a check that could tell them
+   apart.** Every Violin patch so far was a Web Audio node graph --- one
+   oscillator through one filter chain under one envelope --- and each
+   rewrite was rejected by ear in turn: wind instrument, then brass, then
+   synthesiser, then electric guitar:
+
+   > 小提琴音色还是不对 还是管乐 彻底换个方向
+
+   The obvious next move was another tuned variant of the same shape; instead
+   I built `tools/violin-lab/`, which renders candidate DSP to WAV in plain
+   Node (no Web Audio nodes at all) so a timbre could be judged by ear in
+   seconds instead of a rebuild-and-replay round trip, and I calibrated the
+   lab's own spectral-noise measure against signals with known answers
+   (`selftest.mjs`) before trusting it to judge anything, after it first
+   scored a pure sine as 34% noise. `build-worklet.mjs` now assembles the
+   shipped `public/violin-worklet.js` from whichever candidate file was
+   approved, verbatim, and `verify-worklet.mjs` is a standing check that
+   re-renders both and fails if they ever stop being sample-identical
    ([`f6cd0e5`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/f6cd0e5)).
-   The lesson wasn't really about audio DSP: it was that repeated rejection of
-   the same *kind* of fix is a signal to change the approach, not the
-   parameters, and that it's worth spending effort building a faster feedback
-   loop before spending more effort guessing inside a slow one.
+   That check is the actual deliverable of this moment: it turns "trust me,
+   it still sounds like the approved take" into something that goes red the
+   moment it stops being true.
 
-6. **Simulating a real camera frame-by-frame surfaced bugs a fixed-tick test
-   suite structurally can't.** `gesture-state-machine.test.ts` already proved
-   the pure per-hand reducer correct, but every bug in this round lived one
-   layer up, in how `camera-controller.ts` drives two hands' worth of that
-   reducer from an actual, noisy MediaPipe feed --- and every one of them
-   was invisible until I drove the real controller with a fake camera feed
-   in a real browser (`camera-controller.test.ts`), not a fixed 16ms-tick
-   sample sequence. Two hands could end up fighting over one `Wheel` object
-   because a hand's register got reconciled even on a frame where it wasn't
-   detected at all --- a single dropped frame, routine on real hardware, made
-   it look "alone" and reassign it onto the other hand's register. Hand-loss
-   was judged by a fixed frame count, which is a wildly different wall-clock
-   delay depending on how fast `detectForVideo` happens to be running, so it
-   fired mid-play on ordinary tracking noise. And once a hand could reappear
-   already a fist instead of an open palm, its `wheel-visible` and
-   `wheel-locked` CSS classes landed on the same tick, which meant the grow
-   transition finished before the fade-in did --- correct on paper, invisible
-   in practice
+4. **A camera bug that "sometimes" happened pointed at a wrong assumption in
+   the harness's own clock, not at the gesture logic.**
+
+   > 在轮盘消失之后啊 要重新追踪手部啊
+
+   `gesture-state-machine.test.ts` already proved the per-hand reducer
+   correct, so the obvious suspect was that reducer. It wasn't: hand-loss was
+   judged by a fixed count of consecutive bad frames, which is a wildly
+   different wall-clock delay depending on how fast `detectForVideo` happens
+   to be running on a given machine, and a closed fist genuinely reads as
+   lower-confidence to MediaPipe than an open palm --- so ordinary tracking
+   noise mid-play kept crossing that threshold and resetting the hand. I
+   changed the rule itself, timing the grace period from elapsed
+   milliseconds instead of a frame count, and wrote that down in `CLAUDE.md`
+   so the next timing bug in this file doesn't get "fixed" by nudging the
+   same wrong kind of number
    ([`8cc3ec8`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-zdy-forever/commit/8cc3ec8)).
-   None of these were things I could have found by reading the reducer's
-   tests more carefully; they only exist at the seam between "pure logic" and
-   "what a real, imperfect sensor actually sends it."
+   I confirmed it by driving the real controller with a synthetic camera feed
+   paced on actual `requestAnimationFrame` ticks (`camera-controller.test.ts`
+   --- a file that didn't exist before this bug), not the fixed-tick samples
+   a unit test would default to, and checked the wheel survived a 200ms
+   dropout mid-lock without unlocking, then still hid correctly after a
+   genuine one-second absence.
 
 ## Before you ship
 
