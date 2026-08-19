@@ -2,6 +2,15 @@ node_modules/
 dist/
 *.log
 
+# Auditioning renders from tools/violin-lab: regenerate with
+# `node tools/violin-lab/render.mjs`. The candidates that produce them are
+# tracked; 1.6 MB of WAV per candidate is not.
+tools/violin-lab/out/
+
+# Screenshots handed over for debugging a live session -- useful in the
+# conversation, not part of the prototype.
+screenshot/
+
 # editor and OS junk
 .DS_Store
 ._*

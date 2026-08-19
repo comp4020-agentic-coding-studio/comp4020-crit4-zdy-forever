@@ -51,18 +51,6 @@ header {
   max-width: 72rem;
 }
 
-header nav a {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  opacity: 0.55;
-  text-decoration: none;
-}
-
-header nav a:hover,
-header nav a:focus-visible {
-  opacity: 0.9;
-}
-
 main {
   width: 100%;
   max-width: 72rem;
@@ -71,7 +59,7 @@ main {
   align-items: center;
   gap: 1rem;
   flex: 1;
-  padding-top: 6.5rem;
+  padding-top: 4.5rem; /* clears .hud now that it starts 2rem higher */
 }
 
 .invitation {
@@ -83,13 +71,26 @@ main {
   background: linear-gradient(120deg, #fff, #b9c6ff 60%, #e8c1ff);
   background-clip: text;
   color: transparent;
+  transform-origin: top center;
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Once the camera has the floor, the invitation shrinks into a small label
+ * docked at the top rather than competing with the video feed for the
+ * center of the screen. A transform (not a layout change) so it animates in
+ * one smooth step and never reflows the wheels underneath it. */
+body.camera-active .invitation {
+  transform: translateY(-4.4rem) scale(0.38);
 }
 
 /* --- toolbar --------------------------------------------------------- */
 
+/* Was 3rem, leaving room for the header nav's old "Home" link above it.
+ * That link is gone and the header is empty, so the toolbar now sits at the
+ * same inset as everything else instead of leaving dead space above it. */
 .hud {
   position: fixed;
-  top: calc(3rem + var(--safe-top));
+  top: calc(1rem + var(--safe-top));
   left: calc(1rem + env(safe-area-inset-left, 0px));
   z-index: 20;
   display: flex;
@@ -216,6 +217,7 @@ main {
   justify-content: center;
   align-items: center;
   padding: 1rem 0 2rem;
+  transition: opacity 0.3s ease;
 }
 
 .wheel {
@@ -226,6 +228,9 @@ main {
   user-select: none;
 }
 
+/* width is listed here too (not just on .wheel-locked below) so shrinking
+ * back down when a hand unlocks animates instead of snapping -- this base
+ * rule is what's active the instant wheel-locked is removed. */
 .wheel-floating {
   position: absolute;
   top: 0;
@@ -235,12 +240,33 @@ main {
   pointer-events: none;
   transition:
     opacity 0.35s ease,
-    transform 0.08s linear;
+    transform 0.08s linear,
+    width 0.25s ease;
   will-change: transform;
 }
 
 .wheel-floating.wheel-visible {
   opacity: 1;
+}
+
+/* width has its own delay: a hand that timed out and comes straight back as
+ * a fist gets wheel-visible and wheel-locked added in the same tick, so
+ * without this the grow finishes (0.25s) before the fade-in does (0.35s) --
+ * most of the enlarge plays out while the wheel is still mostly transparent,
+ * which reads as "it just appeared already big" rather than as a grow.
+ * Delaying the grow until the fade is mostly done makes it visible either
+ * way this class gets added. */
+.wheel-floating.wheel-locked {
+  width: min(56vw, 320px);
+  transition:
+    opacity 0.35s ease,
+    transform 0.08s linear,
+    width 0.25s ease 0.15s;
+}
+
+.wheels.wheels-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .wheel-glass {

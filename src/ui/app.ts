@@ -4,11 +4,13 @@
 // owns synthesis, and no input controller talks to audio directly.
 import { getAudioEngine } from "../audio/engine";
 import type { Instrument } from "../audio/instrument";
+import { noteNameToFrequency } from "../audio/note-utils";
 import { Piano } from "../audio/piano";
 import { Violin } from "../audio/violin";
 import { CameraController } from "../camera/camera-controller";
 import { createKeyboardController } from "../input/keyboard";
 import { type InstrumentId, MusicEngine } from "../music/state";
+import { HIGH_NOTES, LOW_NOTES } from "../music/tables";
 import { Wheel } from "./wheel";
 
 export function startApp(): void {
@@ -18,9 +20,16 @@ export function startApp(): void {
   const audio = getAudioEngine();
   const onGesture = (): void => audio.resume();
 
+  const violin = new Violin(audio.context, audio.master);
+  // Violin synthesis calibrates itself per pitch on first use, which is too
+  // slow to do inside the render quantum that starts a note. It's monophonic
+  // so it never plays a chord: the two note tables are every pitch it can
+  // reach.
+  violin.warmUp([...LOW_NOTES, ...HIGH_NOTES].map(noteNameToFrequency));
+
   const instruments: Record<InstrumentId, Instrument> = {
     piano: new Piano(audio.context, audio.master),
-    violin: new Violin(audio.context, audio.master),
+    violin,
   };
   const engine = new MusicEngine(instruments);
 
@@ -69,7 +78,7 @@ export function startApp(): void {
   window.addEventListener("pointerdown", onGesture, { once: true });
   window.addEventListener("keydown", onGesture, { once: true });
 
-  setUpCamera(engine, onGesture);
+  setUpCamera(engine, onGesture, wheelsContainer);
   setUpIntroModal(onGesture);
 }
 
@@ -89,7 +98,7 @@ function setUpIntroModal(onGesture: () => void): void {
  * reaching for. Wired up separately from the always-on keyboard/pointer path
  * above, and never required for it.
  */
-function setUpCamera(engine: MusicEngine, onGesture: () => void): void {
+function setUpCamera(engine: MusicEngine, onGesture: () => void, wheelsContainer: HTMLDivElement): void {
   const layer = document.querySelector<HTMLDivElement>("#camera-layer");
   const statusEl = document.querySelector<HTMLParagraphElement>("#camera-status");
   const toggle = document.querySelector<HTMLButtonElement>("#camera-toggle");
@@ -99,7 +108,17 @@ function setUpCamera(engine: MusicEngine, onGesture: () => void): void {
   const echoHigh = new Wheel({ register: "high", caption: "HIGH · C4–C5", engine, interactive: false });
   layer.append(echoLow.element, echoHigh.element);
 
-  const camera = new CameraController(engine, { low: echoLow, high: echoHigh }, layer, statusEl, onGesture);
+  const onLockChange = (anyLocked: boolean): void => {
+    wheelsContainer.classList.toggle("wheels-hidden", anyLocked);
+  };
+  const camera = new CameraController(
+    engine,
+    { low: echoLow, high: echoHigh },
+    layer,
+    statusEl,
+    onGesture,
+    onLockChange,
+  );
 
   toggle.addEventListener("click", async () => {
     onGesture();
@@ -108,10 +127,15 @@ function setUpCamera(engine: MusicEngine, onGesture: () => void): void {
       camera.disable();
       toggle.textContent = "Enable Camera";
       toggle.setAttribute("aria-pressed", "false");
+      document.body.classList.remove("camera-active");
     } else {
       const started = await camera.enable();
       toggle.textContent = started ? "Disable Camera" : "Enable Camera";
       toggle.setAttribute("aria-pressed", String(started));
+      // The title docking to the top is purely a cue that the camera has the
+      // floor now; a failed enable() (permission denied, no getUserMedia)
+      // must leave the page exactly as it was.
+      document.body.classList.toggle("camera-active", started);
     }
     toggle.disabled = false;
   });
