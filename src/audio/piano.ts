@@ -37,7 +37,9 @@ export class Piano implements Instrument {
 
   noteOn(frequency: number, velocity: number): VoiceHandle {
     const t0 = this.context.currentTime;
-    const peak = 0.85 * clamp(velocity, 0.15, 1);
+    // A chord is 3 of these at once; keep a single note's peak modest so
+    // three summed together still land near unity before the limiter.
+    const peak = 0.5 * clamp(velocity, 0.15, 1);
 
     const filter = this.context.createBiquadFilter();
     filter.type = "lowpass";

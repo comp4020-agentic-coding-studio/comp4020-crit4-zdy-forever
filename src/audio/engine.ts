@@ -13,7 +13,30 @@ export class AudioEngine {
     this.context = new Ctor();
     this.master = this.context.createGain();
     this.master.gain.value = 0.85;
-    this.master.connect(this.context.destination);
+
+    // A chord press can stack a dozen-plus oscillators (3 notes x 4 piano
+    // harmonics) with no headroom management otherwise, which clips into an
+    // audible crackle/hiss. Two stages: a gentle "glue" compressor for the
+    // musical dynamics, then a fast, hard limiter as a safety net that
+    // catches whatever transient the glue stage's 5ms attack still let
+    // through (it has no lookahead) before it reaches the speakers.
+    const glue = this.context.createDynamicsCompressor();
+    glue.threshold.value = -18;
+    glue.knee.value = 24;
+    glue.ratio.value = 6;
+    glue.attack.value = 0.005;
+    glue.release.value = 0.15;
+
+    const limiter = this.context.createDynamicsCompressor();
+    limiter.threshold.value = -3;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.001;
+    limiter.release.value = 0.1;
+
+    this.master.connect(glue);
+    glue.connect(limiter);
+    limiter.connect(this.context.destination);
   }
 
   /** Safe to call on every gesture; a no-op once the context is running. */
